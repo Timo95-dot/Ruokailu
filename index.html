@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ruokailurekisteri — henkilökunta</title>
+<style>
+  :root{
+    --ink:#1c2321;
+    --paper:#f3efe6;
+    --card:#ffffff;
+    --line:#d9d2c4;
+    --accent:#3a6b52;      /* metsänvihreä — ruokala/koulu */
+    --accent-soft:#e4ede8;
+    --warn:#b4452f;
+    --muted:#6b6457;
+    --gold:#c79a3c;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(28,35,33,.06),0 8px 24px rgba(28,35,33,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:20px 18px 64px}
+  header.top{
+    display:flex;align-items:baseline;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;margin-bottom:18px;
+  }
+  .brand{display:flex;flex-direction:column}
+  .brand h1{
+    font-size:1.35rem;margin:0;font-weight:650;letter-spacing:-.01em;
+  }
+  .brand .sub{color:var(--muted);font-size:.86rem}
+  .clock{
+    font-variant-numeric:tabular-nums;font-size:.95rem;color:var(--muted);
+    text-align:right;white-space:nowrap;
+  }
+  nav.tabs{
+    display:flex;gap:4px;background:var(--card);border:1px solid var(--line);
+    border-radius:var(--radius);padding:5px;margin-bottom:22px;box-shadow:var(--shadow);
+    flex-wrap:wrap;
+  }
+  nav.tabs button{
+    flex:1;min-width:120px;border:0;background:transparent;cursor:pointer;
+    padding:10px 14px;border-radius:10px;font-size:.92rem;font-weight:560;color:var(--muted);
+    font-family:inherit;transition:.15s;
+  }
+  nav.tabs button.active{background:var(--accent);color:#fff}
+  nav.tabs button:not(.active):hover{background:var(--accent-soft);color:var(--ink)}
+  .view{display:none}
+  .view.active{display:block;animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ---- Kirjauspiste ---- */
+  .scanner{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:34px 28px;text-align:center;
+  }
+  .reader-ring{
+    width:148px;height:148px;border-radius:50%;margin:6px auto 18px;
+    display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 40%,var(--accent-soft),#fff);
+    border:2px solid var(--accent);position:relative;
+  }
+  .reader-ring.live::after{
+    content:"";position:absolute;inset:-8px;border-radius:50%;
+    border:2px solid var(--accent);opacity:.5;animation:pulse 1.6s ease-out infinite;
+  }
+  @keyframes pulse{0%{transform:scale(1);opacity:.5}100%{transform:scale(1.25);opacity:0}}
+  .reader-ring svg{width:62px;height:62px;stroke:var(--accent)}
+  .scan-status{font-size:1.05rem;font-weight:560;min-height:1.5em}
+  .scan-sub{color:var(--muted);font-size:.88rem;margin-top:2px;min-height:1.2em}
+  .feedback{
+    margin:18px auto 4px;max-width:420px;border-radius:12px;padding:14px 16px;
+    font-weight:560;display:none;text-align:left;
+  }
+  .feedback.show{display:block;animation:fade .2s}
+  .feedback.ok{background:var(--accent-soft);color:var(--accent);border:1px solid #bcd3c6}
+  .feedback.dup{background:#fbf3df;color:#8a6a16;border:1px solid #ecd9a6}
+  .feedback.unknown{background:#f7e2dc;color:var(--warn);border:1px solid #e7b9ab}
+  .feedback strong{display:block;font-size:1.05rem}
+  .feedback small{font-weight:450;color:inherit;opacity:.85}
+
+  .controls{margin-top:24px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  button.btn{
+    font-family:inherit;font-size:.9rem;font-weight:560;cursor:pointer;
+    border-radius:10px;padding:11px 18px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);transition:.15s;
+  }
+  button.btn:hover{border-color:var(--accent);color:var(--accent)}
+  button.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.btn.primary:hover{filter:brightness(1.06);color:#fff}
+  button.btn.ghost{background:transparent}
+  .nfc-note{margin-top:14px;font-size:.8rem;color:var(--muted)}
+
+  .sim-chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
+  .sim-chips button{
+    font-family:inherit;font-size:.82rem;cursor:pointer;border:1px dashed var(--line);
+    background:#fff;border-radius:20px;padding:6px 14px;color:var(--muted);
+  }
+  .sim-chips button:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* ---- Taulukot ---- */
+  .panel{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:22px;margin-bottom:18px;
+  }
+  .panel h2{margin:0 0 4px;font-size:1.05rem;font-weight:620}
+  .panel .desc{color:var(--muted);font-size:.86rem;margin:0 0 16px}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+  td.num{font-variant-numeric:tabular-nums;text-align:right}
+  tr:last-child td{border-bottom:0}
+  .uid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem;color:var(--muted)}
+  .pill{display:inline-block;background:var(--accent-soft);color:var(--accent);
+    border-radius:20px;padding:2px 10px;font-size:.78rem;font-weight:560}
+  .row-actions button{
+    border:0;background:transparent;cursor:pointer;color:var(--warn);
+    font-family:inherit;font-size:.84rem;padding:2px 6px;
+  }
+  .row-actions button:hover{text-decoration:underline}
+  .empty{color:var(--muted);font-size:.88rem;text-align:center;padding:26px 0}
+
+  .field-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:8px}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:.78rem;color:var(--muted);font-weight:560}
+  .field input,.field select{
+    font-family:inherit;font-size:.9rem;padding:9px 11px;border:1px solid var(--line);
+    border-radius:9px;background:#fff;color:var(--ink);min-width:150px;
+  }
+  .field input:focus,.field select:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+  .enroll-hint{font-size:.8rem;color:var(--muted);margin-top:8px}
+  .reading-uid{color:var(--accent);font-weight:600}
+
+  .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+  .stat .n{font-size:1.5rem;font-weight:680;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .toolbar .spacer{flex:1}
+  footer.fineprint{margin-top:30px;color:var(--muted);font-size:.78rem;text-align:center;line-height:1.6}
+  @media(max-width:560px){
+    .reader-ring{width:120px;height:120px}
+    th,td{padding:8px 7px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Ruokailurekisteri</h1>
+      <span class="sub">Henkilökunnan ruokailujen kirjaus · MegaFlex-lätkä</span>
+    </div>
+    <div class="clock" id="clock"></div>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-view="scan">Kirjauspiste</button>
+    <button data-view="enroll">Henkilörekisteri</button>
+    <button data-view="report">Raportit</button>
+  </nav>
+
+  <!-- ============ KIRJAUSPISTE ============ -->
+  <section class="view active" id="view-scan">
+    <div class="scanner">
+      <div class="reader-ring" id="ring">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="14" rx="2"/>
+          <path d="M7 9v6M11 9v6M15 12h2M15 15h3"/>
+        </svg>
+      </div>
+      <div class="scan-status" id="scanStatus">Näytä lätkää lukijalle</div>
+      <div class="scan-sub" id="scanSub">Ateria kirjautuu automaattisesti</div>
+
+      <div class="feedback" id="feedback"></div>
+
+      <div class="controls">
+        <button class="btn primary" id="nfcBtn">Käynnistä NFC-luku</button>
+        <button class="btn ghost" id="simToggle">Simulointitila</button>
+      </div>
+      <div class="nfc-note" id="nfcNote"></div>
+
+      <div class="sim-chips" id="simChips" style="display:none"></div>
+    </div>
+
+    <div class="panel" style="margin-top:18px">
+      <h2>Tämän päivän kirjaukset</h2>
+      <p class="desc">Saman henkilön toinen kirjaus samana päivänä tunnistetaan tuplaksi.</p>
+      <div id="todayList"></div>
+    </div>
+  </section>
+
+  <!-- ============ HENKILÖREKISTERI ============ -->
+  <section class="view" id="view-enroll">
+    <div class="panel">
+      <h2>Lisää henkilö</h2>
+      <p class="desc">Lue lätkän tunnus kerran ja liitä se nimeen. Vain tunnus (UID) ja nimi tallennetaan.</p>
+      <div class="field-row">
+        <div class="field">
+          <label>Lätkän tunnus (UID)</label>
+          <input id="enUid" placeholder="esim. 04:A2:1B:7C" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Nimi</label>
+          <input id="enName" placeholder="Etunimi Sukunimi" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Yksikkö</label>
+          <select id="enUnit">
+            <option>Koulu</option>
+            <option>Päiväkoti Verso</option>
+            <option>Päiväkoti Toivo</option>
+            <option>Taidekoulu</option>
+            <option>Esikoulu</option>
+            <option>APIP</option>
+            <option>Hallinto</option>
+          </select>
+        </div>
+        <button class="btn primary" id="enAdd">Tallenna</button>
+        <button class="btn" id="enReadBtn">Lue lätkä</button>
+      </div>
+      <div class="enroll-hint" id="enHint">Voit myös kirjoittaa tunnuksen käsin, jos se on tiedossa.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Rekisteröidyt henkilöt</h2>
+      <p class="desc">Tunnus → nimi -liitos. Tätä taulua vasten ruokailut kohdistetaan raportissa.</p>
+      <div id="peopleList"></div>
+    </div>
+  </section>
+
+  <!-- ============ RAPORTIT ============ -->
+  <section class="view" id="view-report">
+    <div class="summary-grid" id="statGrid"></div>
+    <div class="panel">
+      <div class="toolbar">
+        <div class="field">
+          <label>Alkaen</label>
+          <input type="date" id="repFrom">
+        </div>
+        <div class="field">
+          <label>Päättyen</label>
+          <input type="date" id="repTo">
+        </div>
+        <div class="spacer"></div>
+        <button class="btn" id="csvBtn">Lataa CSV</button>
+      </div>
+      <h2>Ruokailut henkilöittäin</h2>
+      <p class="desc">Valitulta ajanjaksolta. CSV-vienti sopii suoraan palkka- tai kustannusraportointiin.</p>
+      <div id="reportList"></div>
+    </div>
+  </section>
+
+  <footer class="fineprint">
+    Demomalli — data säilyy vain tämän istunnon ajan selaimen muistissa.<br>
+    Tuotantokäytössä: tallennus EU-alueen tietokantaan, yhteistoimintakäsittely ja tietosuojainformointi ennen käyttöönottoa.
+  </footer>
+</div>
+
+<script>
+// ---------------- Tila (istuntomuisti) ----------------
+const STORE_KEY = 'ruokailurekisteri_v1';
+const state = {
+  people: [],        // {uid, name, unit}
+  meals: [],         // {uid, ts}
+  simOn: false,
+  nfcActive: false,
+};
+
+// ---------------- Pysyvä tallennus (laitteen oma muisti) ----------------
+function saveState(){
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify({people:state.people, meals:state.meals}));
+  }catch(e){ /* tila täynnä tai esto — jatketaan muistinvaraisesti */ }
+}
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){ const d=JSON.parse(raw); state.people=d.people||[]; state.meals=d.meals||[]; return true; }
+  }catch(e){}
+  return false;
+}
+
+// ---------------- Apurit ----------------
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2,'0');
+const fmtTime = d => `${pad(d.getHours())}.${pad(d.getMinutes())}`;
+const dayKey = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fmtDate = d => `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`;
+const personByUid = uid => state.people.find(p=>p.uid===uid);
+
+// ---------------- Kello ----------------
+function tick(){
+  const d=new Date();
+  $('#clock').textContent = `${fmtDate(d)} · ${fmtTime(d)}`;
+}
+setInterval(tick,1000); tick();
+
+// ---------------- Välilehdet ----------------
+document.querySelectorAll('nav.tabs button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('nav.tabs button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    $('#view-'+b.dataset.view).classList.add('active');
+    if(b.dataset.view==='report') renderReport();
+    if(b.dataset.view==='enroll') renderPeople();
+  };
+});
+
+// ---------------- Kirjauslogiikka ----------------
+function registerMeal(uid){
+  const person = personByUid(uid);
+  const now = new Date();
+  const fb = $('#feedback');
+  fb.className='feedback show';
+
+  if(!person){
+    fb.classList.add('unknown');
+    fb.innerHTML = `<strong>Tuntematon lätkä</strong><small>Tunnus ${uid} ei ole rekisterissä. Lisää henkilö Henkilörekisteri-välilehdellä.</small>`;
+    flashRing('#b4452f');
+    return;
+  }
+  // tuplatarkistus: sama uid samana päivänä
+  const already = state.meals.find(m=>m.uid===uid && dayKey(new Date(m.ts))===dayKey(now));
+  if(already){
+    fb.classList.add('dup');
+    const t = fmtTime(new Date(already.ts));
+    fb.innerHTML = `<strong>${person.name} — jo kirjattu</strong><small>Tämän päivän ruokailu kirjattiin jo klo ${t}.</small>`;
+    flashRing('#c79a3c');
+    return;
+  }
+  state.meals.push({uid, ts: now.toISOString()});
+  saveState();
+  fb.classList.add('ok');
+  fb.innerHTML = `<strong>Hyvää ruokahalua, ${person.name.split(' ')[0]}!</strong><small>${person.name} · ${person.unit} · kirjattu klo ${fmtTime(now)}</small>`;
+  flashRing('#3a6b52');
+  renderToday();
+}
+function flashRing(color){
+  const r=$('#ring');
+  r.style.transition='none';
+  r.style.borderColor=color;
+  r.style.background=`radial-gradient(circle at 50% 40%, ${color}22, #fff)`;
+  setTimeout(()=>{
+    r.style.transition='.6s';
+    r.style.borderColor='var(--accent)';
+    r.style.background='radial-gradient(circle at 50% 40%,var(--accent-soft),#fff)';
+  },650);
+}
+
+function renderToday(){
+  const today = dayKey(new Date());
+  const rows = state.meals
+    .filter(m=>dayKey(new Date(m.ts))===today)
+    .sort((a,b)=> b.ts.localeCompare(a.ts));
+  const box=$('#todayList');
+  if(!rows.length){ box.innerHTML=`<div class="empty">Ei vielä kirjauksia tänään.</div>`; return; }
+  box.innerHTML = `<table><thead><tr><th>Aika</th><th>Nimi</th><th>Yksikkö</th></tr></thead><tbody>`
+    + rows.map(m=>{
+        const p=personByUid(m.uid)||{name:'(poistettu)',unit:'—'};
+        return `<tr><td class="num">${fmtTime(new Date(m.ts))}</td><td>${p.name}</td><td><span class="pill">${p.unit}</span></td></tr>`;
+      }).join('')
+    + `</tbody></table>`;
+}
+
+// ---------------- Henkilörekisteri ----------------
+function renderPeople(){
+  const box=$('#peopleList');
+  if(!state.people.length){ box.innerHTML=`<div class="empty">Ei rekisteröityjä henkilöitä.</div>`; return; }
+  box.innerHTML = `<table><thead><tr><th>Nimi</th><th>Yksikkö</th><th>Tunnus</th><th></th></tr></thead><tbody>`
+    + state.people.map((p,i)=>`<tr>
+        <td>${p.name}</td>
+        <td><span class="pill">${p.unit}</span></td>
+        <td class="uid">${p.uid}</td>
+        <td class="row-actions"><button data-del="${i}">Poista</button></td>
+      </tr>`).join('')
+    + `</tbody></table>`;
+  box.querySelectorAll('[data-del]').forEach(btn=>{
+    btn.onclick=()=>{ state.people.splice(+btn.dataset.del,1); saveState(); renderPeople(); };
+  });
+}
+$('#enAdd').onclick=()=>{
+  const uid=$('#enUid').value.trim().toUpperCase();
+  const name=$('#enName').value.trim();
+  const unit=$('#enUnit').value;
+  if(!uid||!name){ $('#enHint').textContent='Anna sekä tunnus että nimi.'; $('#enHint').style.color='var(--warn)'; return; }
+  if(personByUid(uid)){ $('#enHint').textContent='Tämä tunnus on jo rekisterissä.'; $('#enHint').style.color='var(--warn)'; return; }
+  state.people.push({uid,name,unit});
+  saveState();
+  $('#enUid').value=''; $('#enName').value='';
+  $('#enHint').textContent='Tallennettu.'; $('#enHint').style.color='var(--accent)';
+  renderPeople();
+};
+$('#enReadBtn').onclick=async ()=>{
+  if(state.simOn){
+    // simulointi: arvo satunnainen uusi UID
+    const hex=()=>pad(Math.floor(Math.random()*256).toString(16)).toUpperCase().slice(-2);
+    $('#enUid').value=`04:${hex()}:${hex()}:${hex()}`;
+    $('#enHint').textContent='Simuloitu tunnus luettu.'; $('#enHint').style.color='var(--accent)';
+    return;
+  }
+  const uid = await readOneTag();
+  if(uid){ $('#enUid').value=uid; $('#enHint').textContent='Tunnus luettu lätkästä.'; $('#enHint').style.color='var(--accent)'; }
+};
+
+// ---------------- Raportit ----------------
+function renderStats(){
+  const today=dayKey(new Date());
+  const todayCount=state.meals.filter(m=>dayKey(new Date(m.ts))===today).length;
+  const thisMonth=state.meals.filter(m=>{
+    const d=new Date(m.ts), n=new Date();
+    return d.getMonth()===n.getMonth() && d.getFullYear()===n.getFullYear();
+  }).length;
+  $('#statGrid').innerHTML=`
+    <div class="stat"><div class="n">${todayCount}</div><div class="l">Tänään</div></div>
+    <div class="stat"><div class="n">${thisMonth}</div><div class="l">Tässä kuussa</div></div>
+    <div class="stat"><div class="n">${state.people.length}</div><div class="l">Henkilöä</div></div>
+    <div class="stat"><div class="n">${state.meals.length}</div><div class="l">Kirjauksia yht.</div></div>`;
+}
+function repRange(){
+  const f=$('#repFrom').value, t=$('#repTo').value;
+  const from=f?new Date(f+'T00:00:00'):new Date('2000-01-01');
+  const to=t?new Date(t+'T23:59:59'):new Date('2999-01-01');
+  return {from,to};
+}
+function reportRows(){
+  const {from,to}=repRange();
+  const counts={};
+  state.meals.forEach(m=>{
+    const d=new Date(m.ts);
+    if(d<from||d>to) return;
+    counts[m.uid]=(counts[m.uid]||0)+1;
+  });
+  return state.people
+    .map(p=>({...p, n: counts[p.uid]||0}))
+    .filter(r=>r.n>0)
+    .sort((a,b)=>b.n-a.n);
+}
+function renderReport(){
+  renderStats();
+  const rows=reportRows();
+  const box=$('#reportList');
+  if(!rows.length){ box.innerHTML=`<div class="empty">Ei ruokailuja valitulla ajanjaksolla.</div>`; return; }
+  box.innerHTML=`<table><thead><tr><th>Nimi</th><th>Yksikkö</th><th>Ruokailuja</th></tr></thead><tbody>`
+    + rows.map(r=>`<tr><td>${r.name}</td><td><span class="pill">${r.unit}</span></td><td class="num">${r.n}</td></tr>`).join('')
+    + `</tbody></table>`;
+}
+$('#repFrom').onchange=renderReport;
+$('#repTo').onchange=renderReport;
+$('#csvBtn').onclick=()=>{
+  const rows=reportRows();
+  const {from,to}=repRange();
+  let csv='Nimi;Yksikko;Ruokailuja\n';
+  rows.forEach(r=>csv+=`${r.name};${r.unit};${r.n}\n`);
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`ruokailut_${dayKey(from)}_${dayKey(to)}.csv`;
+  a.click();
+};
+
+// ---------------- NFC ----------------
+// Oikea luku: Web NFC (Android/Chrome). USB-lukija näppäimistöemulaatiossa
+// syöttää UID:n suoraan kenttään — siksi piilonäppäinkuuntelu alla.
+async function readOneTag(){
+  if(!('NDEFReader' in window)){ alert('Tämä laite/selain ei tue Web NFC -lukua. Käytä USB-lukijaa tai simulointitilaa.'); return null; }
+  try{
+    const r=new NDEFReader();
+    await r.scan();
+    return await new Promise(res=>{
+      r.onreading=ev=>{ res(serialToUid(ev.serialNumber)); };
+    });
+  }catch(e){ alert('NFC-luku ei käynnistynyt: '+e.message); return null; }
+}
+function serialToUid(serial){
+  // Web NFC palauttaa serialNumberin muodossa "04:a2:1b:7c"
+  return (serial||'').toUpperCase();
+}
+$('#nfcBtn').onclick=async ()=>{
+  if(!('NDEFReader' in window)){
+    $('#nfcNote').textContent='Web NFC ei käytettävissä tässä selaimessa. USB-lukija toimii suoraan (näppäimistösyöte), tai kokeile simulointitilaa.';
+    return;
+  }
+  try{
+    const r=new NDEFReader();
+    await r.scan();
+    state.nfcActive=true;
+    $('#ring').classList.add('live');
+    $('#scanStatus').textContent='Lukija aktiivinen';
+    $('#scanSub').textContent='Näytä lätkää';
+    $('#nfcBtn').textContent='NFC päällä';
+    r.onreading=ev=>registerMeal(serialToUid(ev.serialNumber));
+  }catch(e){ $('#nfcNote').textContent='NFC-luku estyi: '+e.message; }
+};
+
+// USB-lukija (näppäimistöemulaatio): kerää nopean numerosarjan + Enter
+let kbBuf='', kbT=0;
+document.addEventListener('keydown', e=>{
+  if($('#view-scan').classList.contains('active')===false) return;
+  const now=Date.now();
+  if(now-kbT>120) kbBuf='';
+  kbT=now;
+  if(e.key==='Enter'){
+    if(kbBuf.length>=4){ registerMeal(kbBuf.toUpperCase()); }
+    kbBuf='';
+  } else if(e.key.length===1){
+    kbBuf+=e.key;
+  }
+});
+
+// ---------------- Simulointitila ----------------
+$('#simToggle').onclick=()=>{
+  state.simOn=!state.simOn;
+  $('#simChips').style.display=state.simOn?'flex':'none';
+  $('#simToggle').textContent=state.simOn?'Simulointi päällä':'Simulointitila';
+  $('#nfcNote').textContent=state.simOn?'Simulointi: napauta nimeä kirjataksesi ruokailun ilman lukijaa.':'';
+  if(state.simOn) buildSimChips();
+};
+function buildSimChips(){
+  const chips = state.people.map(p=>
+    `<button data-uid="${p.uid}">${p.name.split(' ')[0]}</button>`
+  ).join('');
+  const hint = state.people.length ? '' :
+    `<span style="font-size:.82rem;color:var(--muted)">Lisää ensin henkilöitä Henkilörekisteri-välilehdellä.</span>`;
+  $('#simChips').innerHTML = chips + hint +
+    `<button data-uid="04:FF:FF:FF" style="border-color:#e7b9ab;color:#b4452f">Tuntematon lätkä</button>`;
+  $('#simChips').querySelectorAll('button').forEach(b=>{
+    b.onclick=()=>registerMeal(b.dataset.uid);
+  });
+}
+
+// ---------------- Alustus ----------------
+(function init(){
+  loadState();              // lataa laitteen muistiin tallennetut henkilöt ja kirjaukset
+  const d=new Date();
+  $('#repFrom').value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-01`;
+  $('#repTo').value=dayKey(d);
+  renderToday();
+})();
+</script>
+</body>
+</html>
