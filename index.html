@@ -185,9 +185,13 @@
 
       <div class="controls">
         <button class="btn primary" id="nfcBtn">Käynnistä NFC-luku</button>
+        <button class="btn ghost" id="testToggle">Testitila</button>
         <button class="btn ghost" id="simToggle">Simulointitila</button>
       </div>
       <div class="nfc-note" id="nfcNote"></div>
+      <div id="testBanner" style="display:none;margin-top:12px;background:#fbf3df;border:1px solid #ecd9a6;color:#8a6a16;border-radius:10px;padding:10px 14px;font-size:.86rem;font-weight:560">
+        Testitila päällä — tuplakirjauksen esto pois, sama henkilö voi kirjata useita ruokailuita. Kirjaukset merkitään T:llä.
+      </div>
 
       <div class="sim-chips" id="simChips" style="display:none"></div>
     </div>
@@ -252,7 +256,8 @@
           <input type="date" id="repTo">
         </div>
         <div class="spacer"></div>
-        <button class="btn" id="csvBtn">Lataa CSV</button>
+        <button class="btn" id="csvBtn">Lataa CSV (yhteenveto)</button>
+        <button class="btn" id="csvEventsBtn">Lataa CSV (kirjaukset, T)</button>
       </div>
       <h2>Ruokailut henkilöittäin</h2>
       <p class="desc">Valitulta ajanjaksolta. CSV-vienti sopii suoraan palkka- tai kustannusraportointiin.</p>
@@ -273,6 +278,7 @@ const state = {
   people: [],        // {uid, name, unit}
   meals: [],         // {uid, ts}
   simOn: false,
+  testOn: false,
   nfcActive: false,
 };
 
@@ -330,20 +336,26 @@ function registerMeal(uid){
     flashRing('#b4452f');
     return;
   }
-  // tuplatarkistus: sama uid samana päivänä
-  const already = state.meals.find(m=>m.uid===uid && dayKey(new Date(m.ts))===dayKey(now));
-  if(already){
-    fb.classList.add('dup');
-    const t = fmtTime(new Date(already.ts));
-    fb.innerHTML = `<strong>${person.name} — jo kirjattu</strong><small>Tämän päivän ruokailu kirjattiin jo klo ${t}.</small>`;
-    flashRing('#c79a3c');
-    return;
+  // tuplatarkistus: sama uid samana päivänä (ohitetaan testitilassa)
+  if(!state.testOn){
+    const already = state.meals.find(m=>m.uid===uid && dayKey(new Date(m.ts))===dayKey(now));
+    if(already){
+      fb.classList.add('dup');
+      const t = fmtTime(new Date(already.ts));
+      fb.innerHTML = `<strong>${person.name} — jo kirjattu</strong><small>Tämän päivän ruokailu kirjattiin jo klo ${t}.</small>`;
+      flashRing('#c79a3c');
+      return;
+    }
   }
-  state.meals.push({uid, ts: now.toISOString()});
+  state.meals.push({uid, ts: now.toISOString(), test: state.testOn});
   saveState();
   fb.classList.add('ok');
-  fb.innerHTML = `<strong>Hyvää ruokahalua, ${person.name.split(' ')[0]}!</strong><small>${person.name} · ${person.unit} · kirjattu klo ${fmtTime(now)}</small>`;
-  flashRing('#3a6b52');
+  const tag = state.testOn ? ' <strong style="color:var(--gold)">[T]</strong>' : '';
+  const todayCount = state.meals.filter(m=>m.uid===uid && dayKey(new Date(m.ts))===dayKey(now)).length;
+  const extra = state.testOn ? `${person.name} · ${person.unit} · testikirjaus klo ${fmtTime(now)} · tänään ${todayCount} kpl`
+                             : `${person.name} · ${person.unit} · kirjattu klo ${fmtTime(now)}`;
+  fb.innerHTML = `<strong>Hyvää ruokahalua, ${person.name.split(' ')[0]}!${tag}</strong><small>${extra}</small>`;
+  flashRing(state.testOn ? '#c79a3c' : '#3a6b52');
   renderToday();
 }
 function flashRing(color){
@@ -365,10 +377,11 @@ function renderToday(){
     .sort((a,b)=> b.ts.localeCompare(a.ts));
   const box=$('#todayList');
   if(!rows.length){ box.innerHTML=`<div class="empty">Ei vielä kirjauksia tänään.</div>`; return; }
-  box.innerHTML = `<table><thead><tr><th>Aika</th><th>Nimi</th><th>Yksikkö</th></tr></thead><tbody>`
+  box.innerHTML = `<table><thead><tr><th>Aika</th><th>Nimi</th><th>Yksikkö</th><th>Tyyppi</th></tr></thead><tbody>`
     + rows.map(m=>{
         const p=personByUid(m.uid)||{name:'(poistettu)',unit:'—'};
-        return `<tr><td class="num">${fmtTime(new Date(m.ts))}</td><td>${p.name}</td><td><span class="pill">${p.unit}</span></td></tr>`;
+        const tcell = m.test ? `<span class="pill" style="background:#fbf3df;color:#8a6a16">T</span>` : '';
+        return `<tr><td class="num">${fmtTime(new Date(m.ts))}</td><td>${p.name}</td><td><span class="pill">${p.unit}</span></td><td>${tcell}</td></tr>`;
       }).join('')
     + `</tbody></table>`;
 }
@@ -435,39 +448,69 @@ function repRange(){
 }
 function reportRows(){
   const {from,to}=repRange();
-  const counts={};
+  const counts={};      // normaalit
+  const testCounts={};  // testikirjaukset
   state.meals.forEach(m=>{
     const d=new Date(m.ts);
     if(d<from||d>to) return;
-    counts[m.uid]=(counts[m.uid]||0)+1;
+    if(m.test){ testCounts[m.uid]=(testCounts[m.uid]||0)+1; }
+    else      { counts[m.uid]=(counts[m.uid]||0)+1; }
   });
   return state.people
-    .map(p=>({...p, n: counts[p.uid]||0}))
-    .filter(r=>r.n>0)
-    .sort((a,b)=>b.n-a.n);
+    .map(p=>({...p, n: counts[p.uid]||0, t: testCounts[p.uid]||0}))
+    .filter(r=>r.n>0 || r.t>0)
+    .sort((a,b)=>(b.n+b.t)-(a.n+a.t));
+}
+// Yksittäiset kirjaukset rivimuodossa, T-merkinnällä
+function reportEvents(){
+  const {from,to}=repRange();
+  return state.meals
+    .filter(m=>{const d=new Date(m.ts);return !(d<from||d>to);})
+    .map(m=>{
+      const p=personByUid(m.uid)||{name:'(poistettu)',unit:'—'};
+      const d=new Date(m.ts);
+      return {date:`${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()}`,
+              time:fmtTime(d), name:p.name, unit:p.unit, tag:m.test?'T':''};
+    })
+    .sort((a,b)=> a.date===b.date ? a.time.localeCompare(b.time) : 0);
 }
 function renderReport(){
   renderStats();
   const rows=reportRows();
   const box=$('#reportList');
   if(!rows.length){ box.innerHTML=`<div class="empty">Ei ruokailuja valitulla ajanjaksolla.</div>`; return; }
-  box.innerHTML=`<table><thead><tr><th>Nimi</th><th>Yksikkö</th><th>Ruokailuja</th></tr></thead><tbody>`
-    + rows.map(r=>`<tr><td>${r.name}</td><td><span class="pill">${r.unit}</span></td><td class="num">${r.n}</td></tr>`).join('')
+  box.innerHTML=`<table><thead><tr><th>Nimi</th><th>Yksikkö</th><th>Ruokailuja</th><th>Testi (T)</th><th>Yhteensä</th></tr></thead><tbody>`
+    + rows.map(r=>`<tr><td>${r.name}</td><td><span class="pill">${r.unit}</span></td>`
+        +`<td class="num">${r.n}</td>`
+        +`<td class="num">${r.t?`<span class="pill" style="background:#fbf3df;color:#8a6a16">${r.t} T</span>`:'–'}</td>`
+        +`<td class="num"><strong>${r.n+r.t}</strong></td></tr>`).join('')
     + `</tbody></table>`;
 }
 $('#repFrom').onchange=renderReport;
 $('#repTo').onchange=renderReport;
+// CSV 1: yhteenveto henkilöittäin (normaali + testi eroteltuna)
 $('#csvBtn').onclick=()=>{
   const rows=reportRows();
   const {from,to}=repRange();
-  let csv='Nimi;Yksikko;Ruokailuja\n';
-  rows.forEach(r=>csv+=`${r.name};${r.unit};${r.n}\n`);
+  let csv='Nimi;Yksikko;Ruokailuja;Testi_T;Yhteensa\n';
+  rows.forEach(r=>csv+=`${r.name};${r.unit};${r.n};${r.t};${r.n+r.t}\n`);
+  downloadCsv(csv, `ruokailut_yhteenveto_${dayKey(from)}_${dayKey(to)}.csv`);
+};
+// CSV 2: jokainen kirjaus omalla rivillään, T-merkinnällä
+$('#csvEventsBtn').onclick=()=>{
+  const ev=reportEvents();
+  const {from,to}=repRange();
+  let csv='Paivamaara;Aika;Nimi;Yksikko;Tyyppi\n';
+  ev.forEach(e=>csv+=`${e.date};${e.time};${e.name};${e.unit};${e.tag}\n`);
+  downloadCsv(csv, `ruokailut_kirjaukset_${dayKey(from)}_${dayKey(to)}.csv`);
+};
+function downloadCsv(csv, name){
   const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download=`ruokailut_${dayKey(from)}_${dayKey(to)}.csv`;
+  a.download=name;
   a.click();
-};
+}
 
 // ---------------- NFC ----------------
 // Oikea luku: Web NFC (Android/Chrome). USB-lukija näppäimistöemulaatiossa
@@ -517,6 +560,14 @@ document.addEventListener('keydown', e=>{
     kbBuf+=e.key;
   }
 });
+
+// ---------------- Testitila ----------------
+$('#testToggle').onclick=()=>{
+  state.testOn=!state.testOn;
+  $('#testToggle').textContent=state.testOn?'Testitila päällä':'Testitila';
+  $('#testToggle').classList.toggle('primary', state.testOn);
+  $('#testBanner').style.display=state.testOn?'block':'none';
+};
 
 // ---------------- Simulointitila ----------------
 $('#simToggle').onclick=()=>{
